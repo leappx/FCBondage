@@ -73,6 +73,7 @@
       <BufferSecurityCheck>false</BufferSecurityCheck>
       <OmitFramePointers>true</OmitFramePointers>
       <WholeProgramOptimization>true</WholeProgramOptimization>
+      <EnableEnhancedInstructionSet>StreamingSIMDExtensions2</EnableEnhancedInstructionSet>
     </ClCompile>
     <Link>
       <SubSystem>Windows</SubSystem>
@@ -86,7 +87,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="FCBondage.h" />
-    <ClInclude Include="ItemData.h" />
     <ClInclude Include="SigScan.h" />
     <ClInclude Include="stdafx.h" />
     <ClInclude Include="targetver.h" />

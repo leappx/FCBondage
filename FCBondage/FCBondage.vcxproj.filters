@@ -30,9 +30,6 @@
     <ClInclude Include="SigScan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ItemData.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
