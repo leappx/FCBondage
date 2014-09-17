@@ -22,7 +22,8 @@ BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
 INT __cdecl My_ReadObtainedItemPacket(INT unk, ItemObtainedPacket* packet)
 {
 	auto NewSB = packet->SpiritBind * 0.01;
-	std::cout << ++pcount <<". Item: ~" << GetItemNameFromID(packet->ItemID) << "~ || New SB: " << NewSB << " %\n";
+	auto ItemName = GetItemNameFromID(packet->ItemID);
+	std::cout << ++pcount <<". Item: ~" << (ItemName != 0 ? ItemName : "Item Not Found") << "~ || New SB: " << NewSB << " %\n";
 	return Real_ReadObtainedItemPacket(unk,packet);
 }
 
