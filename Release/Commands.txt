@@ -1,0 +1,11 @@
+//console on|off
+Opens or closes the console. ~ Default is off ~
+
+//autoupdate on|off
+Toggles automatic print out as values change. ~ Default is on ~
+
+//showall on|off
+If enabled, all new SB values will be printed. even non-novus. ~ Default is off ~
+
+//showcur
+Prints out current values to chatlog. ~ Values must change before this command displays anything ~
