@@ -1,3 +1,11 @@
+/**=================================================================================================
+ * File: LaLaunch.h
+ * =================================================================================================
+ * \file LaLaunch.h
+ *
+ * \brief Declares the la launch class.
+ */
+
 #include <windows.h>
 #include <tlhelp32.h>
 #include <tchar.h>
@@ -6,7 +14,33 @@
 
 using namespace std;;
 
+/**=================================================================================================
+ * Def: LOADLIBRARY_ROUTINE
+ * =================================================================================================
+ * \def LOADLIBRARY_ROUTINE
+ *
+ * \brief A macro that defines loadlibrary routine.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ *
+ * \param LPTHREAD_START_ROUTINE The lpthread start routine.
+ */
+
 #define LOADLIBRARY_ROUTINE (LPTHREAD_START_ROUTINE)&LoadLibraryA
+
+/**=================================================================================================
+ * Method: ExePath
+ * =================================================================================================
+ * \fn string ExePath()
+ *
+ * \brief Executable path.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ *
+ * \return A string.
+ */
 
 string ExePath() 
 {
@@ -15,6 +49,19 @@ string ExePath()
 	string::size_type pos = string( buffer ).find_last_of( "\\/" );
 	return string( buffer ).substr( 0, pos);
 }
+
+/**=================================================================================================
+ * Method: GetFFXIVProcId
+ * =================================================================================================
+ * \fn UINT32 GetFFXIVProcId()
+ *
+ * \brief Gets ffxiv proc identifier.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ *
+ * \return The ffxiv proc identifier.
+ */
 
 UINT32 GetFFXIVProcId()
 {
@@ -57,6 +104,21 @@ UINT32 GetFFXIVProcId()
 	CloseHandle( hProcessSnap );
 	return pid;
 }
+
+/**=================================================================================================
+ * Method: IsDLLLoaded
+ * =================================================================================================
+ * \fn BOOL IsDLLLoaded( DWORD dwPID )
+ *
+ * \brief Query if 'dwPID' is DLL loaded.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ *
+ * \param dwPID The PID.
+ *
+ * \return true if DLL loaded, false if not.
+ */
 
 BOOL IsDLLLoaded( DWORD dwPID )
 {
