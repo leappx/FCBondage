@@ -1,4 +1,5 @@
 #include <string>
+#include <mutex>
 #define SetFunctionPointer(f,p) *(PINT)(&f) = p
 
 typedef void* (__thiscall* GetChatLogObject)(void* pUserInputObject);
@@ -80,6 +81,10 @@ double VeilOfWiyu = NULL;
 double Omnilex = NULL;
 double HolyShield = NULL;
 
+std::mutex CommandMutex;
+
+std::mutex GetItemMutex;
+
 BOOL ShowAllFlag = FALSE;
 
 BOOL AutoUpdateFlag = TRUE;
@@ -106,7 +111,7 @@ BasicItemInfo* (_cdecl* GetItemInfo)(USHORT);
 
 BOOL __fastcall My_IncommingCommand(VOID* pChatLogObject, INT, CommandStruct* pCmdStruct, UserInputObject* pInputObject);
 
-VOID __stdcall SendCommand(const char* pCmdStr);
+VOID __stdcall SendCommand(std::string pCmdStr);
 
 INT (__cdecl* Real_ReadObtainedItemPacket)(INT,ItemObtainedPacket*);
 
@@ -130,7 +135,7 @@ VOID __stdcall ToggleConsole();
 
 VOID __stdcall ShowCurrentValues();
 
-VOID __stdcall SetValues(ItemObtainedPacket* packet);
+BOOL __stdcall SetValues(UINT16 ItemID, UINT16 NewSB);
 
 __declspec(naked) VOID* __fastcall FastTls(DWORD dwIndex, VOID* val)
 {

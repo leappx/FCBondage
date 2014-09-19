@@ -24,8 +24,7 @@ BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
 
 INT __cdecl My_ReadObtainedItemPacket(INT unk, ItemObtainedPacket* packet)
 {
-	SetValues(packet);
-	if (AutoUpdateFlag)
+	if (SetValues(packet->ItemID, packet->SpiritBind) && AutoUpdateFlag)
 		std::async(std::launch::async, &ShowCurrentValues);
 	if (ConsoleFlag || ShowAllFlag)
 	{
@@ -35,7 +34,7 @@ INT __cdecl My_ReadObtainedItemPacket(INT unk, ItemObtainedPacket* packet)
 		{
 			std::stringstream ss;
 			ss << "/echo ~" << (ItemName != 0 ? ItemName : "Item Not Found") << "~ || SB: " << NewSB << " %";
-			SendCommand(ss.str().c_str());
+			std::async(std::launch::async, &SendCommand,ss.str());
 		}
 		if (ConsoleFlag)
 			std::cout << ++pcount <<". Item: ~" << (ItemName != 0 ? ItemName : "Item Not Found") << "~ || New SB: " << NewSB << " %\n";
@@ -59,6 +58,7 @@ VOID __stdcall InitHook()
 	DetourAttach(&(PVOID&)Real_IncommingCommand,(PVOID)My_IncommingCommand);
 	DetourAttach(&(PVOID&)Real_VerifyThreadOgrigin,(PVOID)My_VerifyThreadOgrigin);
 	DetourTransactionCommit();
+	std::async(std::launch::async, &SendCommand,"/echo SB Tracker Loaded...");
 }
 
 VOID __stdcall ToggleConsole(BOOL on)
@@ -77,10 +77,20 @@ VOID __stdcall ToggleConsole(BOOL on)
 
 const char* __stdcall GetItemNameFromID(USHORT ItemID)
 {
-	auto itemInfo = GetItemInfo(ItemID);
-	if (itemInfo == NULL)
-		return NULL;
-	return &reinterpret_cast<const char*>(itemInfo)[itemInfo->OffsetOfName + offsetof(BasicItemInfo,OffsetOfName)];
+	std::lock_guard<std::mutex> lock(GetItemMutex);
+	const char* result;
+	try
+	{
+		auto itemInfo = GetItemInfo(ItemID);
+		if (itemInfo == NULL)
+			return NULL;
+		result = &reinterpret_cast<const char*>(itemInfo)[itemInfo->OffsetOfName + offsetof(BasicItemInfo,OffsetOfName)];
+	}
+	catch (...)
+	{
+		result = 0;
+	}
+	return result;
 }
 
 VOID __stdcall InitInstanceRetrievalRoutines(void* modinfo)
@@ -129,9 +139,9 @@ BOOL __fastcall My_IncommingCommand(void* pChatLogObject, int, CommandStruct* pC
 		if (firstArg == NULL)
 			return 0;
 		if (!strcmp(firstArg,"on"))
-			AutoUpdateFlag = TRUE;
+			ShowAllFlag = TRUE;
 		else if (!strcmp(firstArg,"off"))
-			AutoUpdateFlag = FALSE;
+			ShowAllFlag = FALSE;
 		return 1;
 	}
 	if (StringContains(pCmdStruct->pCommandString, "//showcur"))
@@ -142,13 +152,20 @@ BOOL __fastcall My_IncommingCommand(void* pChatLogObject, int, CommandStruct* pC
 	return 0;
 }
 
-VOID __stdcall SendCommand(const char* pCmdStr)
+VOID __stdcall SendCommand(std::string pCmdStr)
 {
-	CommandStruct cmdStruct;
-	InitCommandStruct(&cmdStruct,pCmdStr,-1);
-	auto userInputObject = GetUserInputObjectFromRootInput(*ppRootInputObject);
-	auto chatLogObject = userInputObject->CalculateAddressOfChatLog[8](userInputObject);
-	Real_IncommingCommand(chatLogObject,&cmdStruct,userInputObject);
+	std::lock_guard<std::mutex> lock(CommandMutex);
+	try
+	{
+		CommandStruct cmdStruct;
+		InitCommandStruct(&cmdStruct,pCmdStr.c_str(),-1);
+		auto userInputObject = GetUserInputObjectFromRootInput(*ppRootInputObject);
+		auto chatLogObject = userInputObject->CalculateAddressOfChatLog[8](userInputObject);
+		Real_IncommingCommand(chatLogObject,&cmdStruct,userInputObject);
+	}
+	catch (...)
+	{
+	}
 }
 
 INT __fastcall My_VerifyThreadOgrigin(VOID* pThis, INT, INT a2, CHAR a3, INT a4)
@@ -176,42 +193,45 @@ const char* __stdcall FirstArg(const char* pCmd)
 	return NULL;
 }
 
-VOID __stdcall SetValues(ItemObtainedPacket* packet)
+BOOL __stdcall SetValues(UINT16 itemID, UINT16 newSB)
 {
-	auto NewSB = packet->SpiritBind * 0.01;
-	switch (packet->ItemID)
+	auto NewSB = newSB * 0.01;
+	switch (itemID)
 	{
 	case 7863:
 		Curtana = NewSB;
-		break;
+		return TRUE;
 	case 7864:
 		Sphairai = NewSB;
-		break;
+		return TRUE;
 	case 7865:
 		Bravura = NewSB;
-		break;
+		return TRUE;
 	case 7866:
 		GaeBolg = NewSB;
-		break;
+		return TRUE;
 	case 7867:
 		ArtemisBow = NewSB;
-		break;
+		return TRUE;
 	case 7868:
 		Thyrus = NewSB;
-		break;
+		return TRUE;
 	case 7869:
 		StardustRod = NewSB;
-		break;
+		return TRUE;
 	case 7870:
 		VeilOfWiyu = NewSB;
-		break;
+		return TRUE;
 	case 7871:
 		Omnilex = NewSB;
-		break;
+		return TRUE;
 	case 7872:
 		HolyShield = NewSB;
-		break;
+		return TRUE;
+	default:
+		return FALSE;
 	}
+	return FALSE;
 }
 
 VOID __stdcall ShowCurrentValues()
@@ -221,81 +241,121 @@ VOID __stdcall ShowCurrentValues()
 	if (Curtana != NULL)
 	{
 		itemName = GetItemNameFromID(7863);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7863);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << Curtana << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (Sphairai != NULL)
 	{
 		itemName = GetItemNameFromID(7864);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7864);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << Sphairai << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (Bravura != NULL)
 	{
 		itemName = GetItemNameFromID(7865);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7865);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << Bravura << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (GaeBolg != NULL)
 	{
 		itemName = GetItemNameFromID(7866);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7866);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << GaeBolg << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (ArtemisBow != NULL)
 	{
 		itemName = GetItemNameFromID(7867);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7867);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << ArtemisBow << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (Thyrus != NULL)
 	{
 		itemName = GetItemNameFromID(7868);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7868);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << Thyrus << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (StardustRod != NULL)
 	{
 		itemName = GetItemNameFromID(7869);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7869);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << StardustRod << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (VeilOfWiyu != NULL)
 	{
 		itemName = GetItemNameFromID(7870);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7870);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << VeilOfWiyu << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (Omnilex != NULL)
 	{
 		itemName = GetItemNameFromID(7871);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7871);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << Omnilex << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 	if (HolyShield != NULL)
 	{
 		itemName = GetItemNameFromID(7872);
+		if (itemName == NULL)
+		{
+			Sleep(500);
+			itemName = GetItemNameFromID(7872);
+		}
 		std::stringstream ss;
 		ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << HolyShield << " %";
-		Sleep(100);
 		SendCommand(ss.str().c_str());
 	}
 }
