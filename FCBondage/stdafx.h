@@ -10,7 +10,14 @@
 #define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
 // Windows Header Files:
 #include <windows.h>
+#include <string>
+#include <mutex>
+#include <atomic>
+#include <future>
+#include <sstream>
+#include <iostream>
+#include <psapi.h>
+#include "GameTypes.h"
+#include "SBTracker.h"
+#include "SigScan.h"
 
-
-
-// TODO: reference additional headers your program requires here

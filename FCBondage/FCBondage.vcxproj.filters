@@ -30,9 +30,30 @@
     <ClInclude Include="SigScan.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Hooks.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="GameTypes.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Sigs.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="SBTracker.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FCBondage.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SBTracker.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="stdafx.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="SigScan.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

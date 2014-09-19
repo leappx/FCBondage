@@ -8,17 +8,23 @@
 
 #include "stdafx.h"
 #include "FCBondage.h"
-#include "SigScan.h"
-#include <iostream>
-#include <future>
-#include <sstream>
+#include "Sigs.h"
+#include "Hooks.h"
 #include <detours.h>
 #pragma comment( lib, "detours.lib" )
 
 /**=================================================================================================
+ * Member: TrackerObject
+ * =================================================================================================
+ * \brief The tracker object.
+ */
+
+FCBondage::SBTracker* TrackerObject = NULL;
+
+/**=================================================================================================
  * Method: DllMain
  * =================================================================================================
- * \fn BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
+ * \fn bool WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
  *
  * \brief DLL main.
  *
@@ -29,10 +35,10 @@
  * \param fdwReason  The fdw reason.
  * \param parameter3 The third parameter.
  *
- * \return A WINAPI.
+ * \return A bool.
  */
 
-BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
+bool WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
 {
 	switch (fdwReason)
 	{
@@ -42,190 +48,120 @@ BOOL WINAPI DllMain(HINSTANCE, DWORD fdwReason, LPVOID)
 	default:
 		break;
 	}
-	return TRUE;
+	return true;
+}
+
+/**=================================================================================================
+ * Method: InitHook
+ * =================================================================================================
+ * \fn void __stdcall InitHook()
+ *
+ * \brief Initializes the hook.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ */
+
+void __stdcall InitHook()
+{
+	MODULEINFO modinfo;
+
+	// Retrieve the module info structure of the "ffxiv.exe" base executable.
+	GetModuleInformation(GetCurrentProcess(), GetModuleHandleA("ffxiv.exe"), &modinfo, sizeof(MODULEINFO));
+
+	// Scan for and set our proxy function pointers.
+	SetFunctionPointer(Real_ReadObtainedItemPacket, FindPattern(ItemPacket_FuncSig,"xxxxxxx????xxxxxxx", &modinfo));
+	SetFunctionPointer(Real_IncomingCommand, FindPattern(IncomingCommand_FuncSig,"xxxxxxxxxxxxxx", &modinfo) - 0x23);
+	
+	// Preform the hooking and instantiation process.
+	// TODO: Clean this up, order of operations is causing it to be an eyesore.
+	DetourTransactionBegin();
+	DetourUpdateThread(GetCurrentThread());
+	DetourAttach(&(PVOID&)Real_ReadObtainedItemPacket,(PVOID)My_ReadObtainedItemPacket);
+	DetourAttach(&(PVOID&)Real_IncomingCommand,(PVOID)My_IncomingCommand);
+	TrackerObject = new FCBondage::SBTracker(Real_IncomingCommand);
+	SetFunctionPointer(TrackerObject->InitCommandStruct, FindPattern(InitCommandStruct_FuncSig,"xxxxxxxxxxxx", &modinfo) - 0x2D);
+	SetFunctionPointer(TrackerObject->GetItemInfo, FindPattern(GetItemInfo_FuncSig,"xxxxxxx????xxx", &modinfo));
+	InitInstanceRetrievalRoutines(&modinfo);
+	InitThreadSecurity(&modinfo);
+	DetourAttach(&(PVOID&)Real_VerifyThreadOrigin,(PVOID)My_VerifyThreadOrigin);
+	DetourTransactionCommit();
+
+	// Print to chat that we are finished.
+	std::async(std::launch::async, &FCBondage::SBTracker::SendCommand,TrackerObject,"/echo SB Tracker Loaded...");
+}
+
+/**=================================================================================================
+ * Method: InitInstanceRetrievalRoutines
+ * =================================================================================================
+ * \fn void __stdcall InitInstanceRetrievalRoutines(MODULEINFO* modinfo)
+ *
+ * \brief Initializes the instance retrieval routines.
+ * 		  NOTE: These routines are the functions the game uses to obtain pointers for a needed class object.
+ * 				We can also use these for such, and doing so eliminates the need for static pointers.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ *
+ * \param [in,out] modinfo If non-null, the modinfo.
+ */
+
+void __stdcall InitInstanceRetrievalRoutines(MODULEINFO* modinfo)
+{
+	auto pppRootInputObject = FindPattern(Input_ObjectSig,"xxxxxxxxxxxxxxx", modinfo) -0x24;
+	TrackerObject->ppRootInputObject = *(void***)pppRootInputObject;
+	int JmpDistance = *(int*)(pppRootInputObject + 5) + 9;
+	SetFunctionPointer(TrackerObject->GetUserInputObjectFromRootInput, pppRootInputObject + JmpDistance);
+}
+
+/**=================================================================================================
+ * Method: InitThreadSecurity
+ * =================================================================================================
+ * \fn void __stdcall InitThreadSecurity(MODULEINFO* modinfo)
+ *
+ * \brief Initializes the thread security.
+ * 		  NOTE: Various routines within the game, can only be called from a thread created by the game.
+ * 				We can bypass this by making sure all of the threads "we" create, inherit the game's TIB values.
+ *
+ * \author DevNull
+ * \date 9/19/2014
+ *
+ * \param [in,out] modinfo If non-null, the modinfo.
+ */
+
+void __stdcall InitThreadSecurity(MODULEINFO* modinfo)
+{
+	auto ppTls = FindPattern(VerifyThreadOrigin_FuncSig,"xxxxxxx????x", modinfo) + 7;
+	TrackerObject->pThreadVerifyIndex = *(unsigned __int32**)ppTls;
+	SetFunctionPointer(Real_VerifyThreadOrigin, ppTls - 4);
 }
 
 /**=================================================================================================
  * Method: My_ReadObtainedItemPacket
  * =================================================================================================
- * \fn INT __cdecl My_ReadObtainedItemPacket(INT unk, ItemObtainedPacket* packet)
+ * \fn __int32 __cdecl My_ReadObtainedItemPacket(INT unk, ItemUpdatePacket* packet)
  *
- * \brief My read obtained item packet.
+ * \brief Our hook into the games Item Update function.
  *
  * \author DevNull
  * \date 9/19/2014
  *
  * \param unk			  The unk.
  * \param [in,out] packet If non-null, the packet.
- *
- * \return An INT.
  */
 
-INT __cdecl My_ReadObtainedItemPacket(INT unk, ItemObtainedPacket* packet)
+__int32 __cdecl My_ReadObtainedItemPacket(INT unk, ItemUpdatePacket* packet)
 {
-	if (SetValues(packet->ItemID, packet->SpiritBind) && AutoUpdateFlag)
-		std::async(std::launch::async, &ShowCurrentValues);
-	if (ConsoleFlag || ShowAllFlag)
-	{
-		auto NewSB = packet->SpiritBind * 0.01;
-		auto ItemName = GetItemNameFromID(packet->ItemID);
-		if (ShowAllFlag)
-		{
-			std::stringstream ss;
-			ss << "/echo ~" << (ItemName != 0 ? ItemName : "Item Not Found") << "~ || SB: " << NewSB << " %";
-			std::async(std::launch::async, &SendCommand,ss.str());
-		}
-		if (ConsoleFlag)
-			std::cout << ++pcount <<". Item: ~" << (ItemName != 0 ? ItemName : "Item Not Found") << "~ || New SB: " << NewSB << " %\n";
-	}
+	TrackerObject->HandleItemPacket(packet->ItemID,packet->SpiritBind);
 	return Real_ReadObtainedItemPacket(unk,packet);
 }
 
 /**=================================================================================================
- * Method: InitHook
+ * Method: My_IncomingCommand
  * =================================================================================================
- * \fn VOID __stdcall InitHook()
+ * \fn char __fastcall My_IncomingCommand(void* pChatLogObject, __int32, CommandStruct* pCmdStruct, UserInputObject* pInputObject)
  *
- * \brief Initialises the hook.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \return A VOID.
- */
-
-VOID __stdcall InitHook()
-{
-	MODULEINFO modinfo;
-	GetModuleInformation(GetCurrentProcess(), GetModuleHandleA("ffxiv.exe"), &modinfo, sizeof(MODULEINFO));
-	SetFunctionPointer(Real_ReadObtainedItemPacket, FindPattern(ItemPacket_FuncSig,"xxxxxxx????xxxxxxx", &modinfo));
-	SetFunctionPointer(GetItemInfo, FindPattern(GetItemInfo_FuncSig,"xxxxxxx????xxx", &modinfo));
-	SetFunctionPointer(Real_IncommingCommand, FindPattern(IncommingCommand_FuncSig,"xxxxxxxxxxxxxx", &modinfo) - 0x23);
-	SetFunctionPointer(InitCommandStruct, FindPattern(InitCommandStruct_FuncSig,"xxxxxxxxxxxx", &modinfo) - 0x2D);
-	InitInstanceRetrievalRoutines(&modinfo);
-	InitThreadSecurity(&modinfo);
-	DetourTransactionBegin();
-	DetourUpdateThread(GetCurrentThread());
-	DetourAttach(&(PVOID&)Real_ReadObtainedItemPacket,(PVOID)My_ReadObtainedItemPacket);
-	DetourAttach(&(PVOID&)Real_IncommingCommand,(PVOID)My_IncommingCommand);
-	DetourAttach(&(PVOID&)Real_VerifyThreadOgrigin,(PVOID)My_VerifyThreadOgrigin);
-	DetourTransactionCommit();
-	std::async(std::launch::async, &SendCommand,"/echo SB Tracker Loaded...");
-}
-
-/**=================================================================================================
- * Method: ToggleConsole
- * =================================================================================================
- * \fn VOID __stdcall ToggleConsole(BOOL on)
- *
- * \brief Toggle console.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param on true to on.
- *
- * \return A VOID.
- */
-
-VOID __stdcall ToggleConsole(BOOL on)
-{
-	ConsoleFlag = on;
-	if (on)
-	{
-		AllocConsole();
-		freopen("CONIN$", "r", stdin);
-		freopen("CONOUT$", "w", stdout);
-		freopen("CONOUT$", "w", stderr);
-		return;
-	}
-	FreeConsole();
-}
-
-/**=================================================================================================
- * Method: GetItemNameFromID
- * =================================================================================================
- * \fn const char* __stdcall GetItemNameFromID(USHORT ItemID)
- *
- * \brief Gets item name from identifier.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param ItemID Identifier for the item.
- *
- * \return null if it fails, else the item name from identifier.
- */
-
-const char* __stdcall GetItemNameFromID(USHORT ItemID)
-{
-	std::lock_guard<std::mutex> lock(GetItemMutex);
-	const char* result;
-	try
-	{
-		auto itemInfo = GetItemInfo(ItemID);
-		if (itemInfo == NULL)
-			return NULL;
-		result = &reinterpret_cast<const char*>(itemInfo)[itemInfo->OffsetOfName + offsetof(BasicItemInfo,OffsetOfName)];
-	}
-	catch (...)
-	{
-		result = 0;
-	}
-	return result;
-}
-
-/**=================================================================================================
- * Method: InitInstanceRetrievalRoutines
- * =================================================================================================
- * \fn VOID __stdcall InitInstanceRetrievalRoutines(void* modinfo)
- *
- * \brief Initialises the instance retrieval routines.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param [in,out] modinfo If non-null, the modinfo.
- *
- * \return A VOID.
- */
-
-VOID __stdcall InitInstanceRetrievalRoutines(void* modinfo)
-{
-	auto pppRootInputObject = FindPattern(Input_ObjectSig,"xxxxxxxxxxxxxxx", (MODULEINFO*)modinfo) -0x24;
-	ppRootInputObject = *(void***)pppRootInputObject;
-	int JmpDistance = *(int*)(pppRootInputObject + 5) + 9;
-	SetFunctionPointer(GetUserInputObjectFromRootInput, pppRootInputObject + JmpDistance);
-}
-
-/**=================================================================================================
- * Method: InitThreadSecurity
- * =================================================================================================
- * \fn VOID __stdcall InitThreadSecurity(void* modinfo)
- *
- * \brief Initialises the thread security.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param [in,out] modinfo If non-null, the modinfo.
- *
- * \return A VOID.
- */
-
-VOID __stdcall InitThreadSecurity(void* modinfo)
-{
-	auto ppTls = FindPattern(VerifyThreadOgrigin_FuncSig,"xxxxxxx????x",(MODULEINFO*)modinfo) + 7;
-	pThreadVerifyIndex = *(PDWORD*)ppTls;
-	SetFunctionPointer(Real_VerifyThreadOgrigin, ppTls - 4);
-}
-
-/**=================================================================================================
- * Method: My_IncommingCommand
- * =================================================================================================
- * \fn BOOL __fastcall My_IncommingCommand(void* pChatLogObject, int, CommandStruct* pCmdStruct, UserInputObject* pInputObject)
- *
- * \brief My incomming command.
+ * \brief Our hook into the games command handler.
  *
  * \author DevNull
  * \date 9/19/2014
@@ -235,298 +171,37 @@ VOID __stdcall InitThreadSecurity(void* modinfo)
  * \param [in,out] pCmdStruct	  If non-null, the command structure.
  * \param [in,out] pInputObject   If non-null, the input object.
  *
- * \return true if it succeeds, false if it fails.
+ * \return true = discard command, false = handle command.
  */
 
-BOOL __fastcall My_IncommingCommand(void* pChatLogObject, int, CommandStruct* pCmdStruct, UserInputObject* pInputObject)
+char __fastcall My_IncomingCommand(void* pChatLogObject, __int32, CommandStruct* pCmdStruct, UserInputObject* pInputObject)
 {
-	if (pCmdStruct->pCommandString[1] != 0x2F)
-		return Real_IncommingCommand(pChatLogObject,pCmdStruct,pInputObject);
-
-	auto firstArg = FirstArg(pCmdStruct->pCommandString);
-	if (StringContains(pCmdStruct->pCommandString, "//console"))
-	{
-		if (firstArg == NULL)
-			return Real_IncommingCommand(pChatLogObject,pCmdStruct,pInputObject);
-		if (!strcmp(firstArg,"on"))
-		{
-			ToggleConsole(TRUE);
-			std::async(std::launch::async, &SendCommand,"/echo Console Opened.");
-		}
-		else if (!strcmp(firstArg,"off"))
-		{
-			ToggleConsole(FALSE);
-			std::async(std::launch::async, &SendCommand,"/echo Console Closed.");
-		}
-		return 1;
-	}
-	if (StringContains(pCmdStruct->pCommandString, "//autoupdate"))
-	{
-		if (firstArg == NULL)
-			return Real_IncommingCommand(pChatLogObject,pCmdStruct,pInputObject);
-		if (!strcmp(firstArg,"on"))
-		{
-			AutoUpdateFlag = TRUE;
-			std::async(std::launch::async, &SendCommand,"/echo Auto Updating Values.");
-		}
-		else if (!strcmp(firstArg,"off"))
-		{
-			AutoUpdateFlag = FALSE;
-			std::async(std::launch::async, &SendCommand,"/echo Not Auto Updating Values.");
-		}
-		return 1;
-	}
-	if (StringContains(pCmdStruct->pCommandString, "//showall"))
-	{
-		if (firstArg == NULL)
-			return Real_IncommingCommand(pChatLogObject,pCmdStruct,pInputObject);
-		if (!strcmp(firstArg,"on"))
-		{
-			ShowAllFlag = TRUE;
-			std::async(std::launch::async, &SendCommand,"/echo Showing All Items.");
-		}
-		else if (!strcmp(firstArg,"off"))
-		{
-			ShowAllFlag = FALSE;
-			std::async(std::launch::async, &SendCommand,"/echo Showing Only Novus Items.");
-		}
-		return 1;
-	}
-	if (StringContains(pCmdStruct->pCommandString, "//showcur"))
-	{
-		std::async(std::launch::async, &ShowCurrentValues);
-		return 1;
-	}
-	return Real_IncommingCommand(pChatLogObject,pCmdStruct,pInputObject);
+	return TrackerObject->HandleCommand(pCmdStruct->pCommandString) ? 1 : Real_IncomingCommand(pChatLogObject,pCmdStruct,pInputObject);
 }
 
 /**=================================================================================================
- * Method: SendCommand
+ * Method: My_VerifyThreadOrigin
  * =================================================================================================
- * \fn VOID __stdcall SendCommand(std::string pCmdStr)
+ * \fn __int32 __fastcall My_VerifyThreadOrigin(void* pThis, __int32, __int32 a2, __int8 a3, __int32 a4)
  *
- * \brief Sends a command.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param pCmdStr The command string.
- *
- * \return A VOID.
- */
-
-VOID __stdcall SendCommand(std::string pCmdStr)
-{
-	std::lock_guard<std::mutex> lock(CommandMutex);
-	try
-	{
-		CommandStruct cmdStruct;
-		InitCommandStruct(&cmdStruct,pCmdStr.c_str(),-1);
-		auto userInputObject = GetUserInputObjectFromRootInput(*ppRootInputObject);
-		auto chatLogObject = userInputObject->CalculateAddressOfChatLog[8](userInputObject);
-		Real_IncommingCommand(chatLogObject,&cmdStruct,userInputObject);
-	}
-	catch (...)
-	{
-	}
-}
-
-/**=================================================================================================
- * Method: My_VerifyThreadOgrigin
- * =================================================================================================
- * \fn INT __fastcall My_VerifyThreadOgrigin(VOID* pThis, INT, INT a2, CHAR a3, INT a4)
- *
- * \brief My verify thread origin.
+ * \brief Our hook into the games thread verification routine.
  *
  * \author DevNull
  * \date 9/19/2014
  *
  * \param [in,out] pThis If non-null, this.
  * \param parameter2	 The second parameter.
- * \param a2			 The second INT.
- * \param a3			 The third CHAR.
- * \param a4			 The fourth INT.
- *
- * \return An INT.
+ * \param a2			 The second __int32.
+ * \param a3			 The third __int8.
+ * \param a4			 The fourth __int32.
  */
 
-INT __fastcall My_VerifyThreadOrigin(VOID* pThis, INT, INT a2, CHAR a3, INT a4)
+__int32 __fastcall My_VerifyThreadOrigin(void* pThis, __int32, __int32 a2, __int8 a3, __int32 a4)
 {
-	auto ctTls = FastTls(*pThreadVerifyIndex, NULL);
+	auto ctTls = FastTls(*TrackerObject->pThreadVerifyIndex, NULL);
 	if (ctTls == NULL)
-		FastTls(*pThreadVerifyIndex, pThreadVerify);
+		FastTls(*TrackerObject->pThreadVerifyIndex, TrackerObject->pThreadVerify);
 	else
-		pThreadVerify = ctTls;
-	return Real_VerifyThreadOgrigin(pThis,a2,a3,a4);
-}
-
-/**=================================================================================================
- * Method: StringContains
- * =================================================================================================
- * \fn BOOL __stdcall StringContains(const char* str1, const char* str2)
- *
- * \brief String contains.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param str1 The first string.
- * \param str2 The second string.
- *
- * \return true if it succeeds, false if it fails.
- */
-
-BOOL __stdcall StringContains(const char* str1, const char* str2)
-{
-	return strstr(str1,str2) != NULL;
-}
-
-/**=================================================================================================
- * Method: FirstArg
- * =================================================================================================
- * \fn const char* __stdcall FirstArg(const char* pCmd)
- *
- * \brief First argument.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param pCmd The command.
- *
- * \return null if it fails, else a char*.
- */
-
-const char* __stdcall FirstArg(const char* pCmd)
-{
-	while (pCmd[0])
-	{
-		if (pCmd++[0] == ' ')
-			return pCmd;
-	}
-	return NULL;
-}
-
-/**=================================================================================================
- * Method: SetValues
- * =================================================================================================
- * \fn BOOL __stdcall SetValues(UINT16 itemID, UINT16 newSB)
- *
- * \brief Sets the values.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param itemID Identifier for the item.
- * \param newSB  The new sb.
- *
- * \return true if it succeeds, false if it fails.
- */
-
-BOOL __stdcall SetValues(UINT16 itemID, UINT16 newSB)
-{
-	auto NewSB = newSB * 0.01;
-	switch (itemID)
-	{
-	case 7863:
-		Curtana = NewSB;
-		return TRUE;
-	case 7864:
-		Sphairai = NewSB;
-		return TRUE;
-	case 7865:
-		Bravura = NewSB;
-		return TRUE;
-	case 7866:
-		GaeBolg = NewSB;
-		return TRUE;
-	case 7867:
-		ArtemisBow = NewSB;
-		return TRUE;
-	case 7868:
-		Thyrus = NewSB;
-		return TRUE;
-	case 7869:
-		StardustRod = NewSB;
-		return TRUE;
-	case 7870:
-		VeilOfWiyu = NewSB;
-		return TRUE;
-	case 7871:
-		Omnilex = NewSB;
-		return TRUE;
-	case 7872:
-		HolyShield = NewSB;
-		return TRUE;
-	default:
-		return FALSE;
-	}
-	return FALSE;
-}
-
-/**=================================================================================================
- * Method: ShowCurrentValues
- * =================================================================================================
- * \fn VOID __stdcall ShowCurrentValues()
- *
- * \brief Shows the current values.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \return A VOID.
- */
-
-VOID __stdcall ShowCurrentValues()
-{
-	const char* itemName = NULL;
-
-	if (Curtana != NULL)
-		PrintInfoToChatLog(7863,Curtana);
-	if (Sphairai != NULL)
-		PrintInfoToChatLog(7864,Sphairai);
-	if (Bravura != NULL)
-		PrintInfoToChatLog(7865,Bravura);
-	if (GaeBolg != NULL)
-		PrintInfoToChatLog(7866,GaeBolg);
-	if (ArtemisBow != NULL)
-		PrintInfoToChatLog(7867,ArtemisBow);
-	if (Thyrus != NULL)
-		PrintInfoToChatLog(7868,Thyrus);
-	if (StardustRod != NULL)
-		PrintInfoToChatLog(7869,StardustRod);
-	if (VeilOfWiyu != NULL)
-		PrintInfoToChatLog(7870,VeilOfWiyu);
-	if (Omnilex != NULL)
-		PrintInfoToChatLog(7871,Omnilex);
-	if (HolyShield != NULL)
-		PrintInfoToChatLog(7872,HolyShield);
-}
-
-/**=================================================================================================
- * Method: PrintInfoToChatLog
- * =================================================================================================
- * \fn VOID __stdcall PrintInfoToChatLog(UINT16 itemID, double SB)
- *
- * \brief Print information to chat log.
- *
- * \author DevNull
- * \date 9/19/2014
- *
- * \param itemID Identifier for the item.
- * \param SB	 The sb.
- *
- * \return A VOID.
- */
-
-VOID __stdcall PrintInfoToChatLog(UINT16 itemID, double SB)
-{
-	auto itemName = GetItemNameFromID(itemID);
-	if (itemName == NULL)
-	{
-		Sleep(500);
-		itemName = GetItemNameFromID(itemID);
-	}
-	std::stringstream ss;
-	ss << "/echo ~" << (itemName != 0 ? itemName : "Item Not Found") << "~ || SB: " << SB << " %";
-	SendCommand(ss.str());
+		TrackerObject->pThreadVerify = ctTls;
+	return Real_VerifyThreadOrigin(pThis,a2,a3,a4);
 }
