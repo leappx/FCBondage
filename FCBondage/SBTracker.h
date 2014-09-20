@@ -60,6 +60,7 @@ namespace FCBondage
 		float Omnilex;
 		float HolyShield;
 
+		bool RawView;
 		bool AutoUpdateFlag;
 		bool ConsoleFlag;
 		bool ShowAllFlag;

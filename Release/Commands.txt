@@ -12,3 +12,6 @@ Prints out current values to chatlog. ~ Values must change before this command d
 
 //reset
 Resets all saved novus values.
+
+//rawview on|off ~ Default is off ~
+Toggles display of values in their raw integer form.

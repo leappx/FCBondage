@@ -46,6 +46,7 @@ FCBondage::SBTracker::SBTracker(IncomingCommandFunction IncomingCommand)
 	AutoUpdateFlag = true;
 	ConsoleFlag = false;
 	ShowAllFlag = false;
+	RawView = false;
 	pcount = 0;
 }
 
@@ -213,7 +214,7 @@ void FCBondage::SBTracker::PrintInfoToChat(unsigned __int16 itemID, float SB)
 		itemName = GetItemName(itemID);
 	}
 	std::stringstream ss;
-	ss << "/echo ~" << (!itemName.empty() ? itemName : "Item Not Found") << "~ || SB: " << SB << " %";
+	ss << "/echo ~" << (!itemName.empty() ? itemName : "Item Not Found") << "~ || SB: " << (!RawView ? SB : SB*100.0f) << (!RawView ? " %" : "");
 	SendCommand(ss.str().c_str());
 }
 
@@ -240,7 +241,7 @@ void FCBondage::SBTracker::PrintInfoToConsole(unsigned __int16 itemID, float SB)
 		Sleep(500);
 		itemName = GetItemName(itemID);
 	}
-	std::cout << ++pcount <<". Item: ~" << (!itemName.empty() ? itemName : "Item Not Found") << "~ || New SB: " << SB << " %\n";
+	std::cout << ++pcount <<". Item: ~" << (!itemName.empty() ? itemName : "Item Not Found") << "~ || New SB: " << (!RawView ? SB : SB*100.0f) << (!RawView ? " %" : "") << "\n";
 }
 
 /**=================================================================================================
@@ -434,6 +435,24 @@ bool FCBondage::SBTracker::HandleCommand(const char* pCommandStr)
 	{
 		std::async(std::launch::async, &FCBondage::SBTracker::ClearValues,this);
 		std::async(std::launch::async, &FCBondage::SBTracker::SendCommand,this,"/echo Values Cleared.");
+		return true;
+	}
+
+	// Toggle value display mode
+	if (strstr(pCommandStr, "//rawview"))
+	{
+		if (firstArg == NULL)
+			return false;
+		if (!strcmp(firstArg,"on"))
+		{
+			RawView = true;
+			std::async(std::launch::async, &FCBondage::SBTracker::SendCommand,this,"/echo Showing values as raw integers.");
+		}
+		else if (!strcmp(firstArg,"off"))
+		{
+			RawView = false;
+			std::async(std::launch::async, &FCBondage::SBTracker::SendCommand,this,"/echo Showing values as decimals.");
+		}
 		return true;
 	}
 
