@@ -148,6 +148,9 @@ bool FCBondage::SBTracker::SetValues(unsigned __int16 itemID, unsigned __int16 n
 	case 7872:
 		HolyShield = newSBf;
 		return true;
+	case 7888:
+		Yoshimitsu = newSBf;
+		return true;
 	default:
 		return false;
 	}
@@ -187,6 +190,8 @@ void FCBondage::SBTracker::DisplayCurrentValues()
 		PrintInfoToChat(7871,Omnilex);
 	if (HolyShield != 0.0f)
 		PrintInfoToChat(7872,HolyShield);
+	if (Yoshimitsu != 0.0f)
+		PrintInfoToChat(7888, Yoshimitsu);
 }
 
 /**=================================================================================================
@@ -267,6 +272,7 @@ void FCBondage::SBTracker::ClearValues()
 	VeilOfWiyu = 0.0f;
 	Omnilex = 0.0f;
 	HolyShield = 0.0f;
+	Yoshimitsu = 0.0f;
 }
 
 /**=================================================================================================

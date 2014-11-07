@@ -59,6 +59,7 @@ namespace FCBondage
 		float VeilOfWiyu;
 		float Omnilex;
 		float HolyShield;
+		float Yoshimitsu;
 
 		bool RawView;
 		bool AutoUpdateFlag;
